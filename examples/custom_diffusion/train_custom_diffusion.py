@@ -37,11 +37,8 @@ from packaging import version
 from PIL import Image
 from torch.utils.data import Dataset
 from torchvision import transforms
-# NEW
-from torchvision.transforms import ToTensor
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PretrainedConfig
-
 
 import diffusers
 from diffusers import (
@@ -51,16 +48,11 @@ from diffusers import (
     DPMSolverMultistepScheduler,
     UNet2DConditionModel,
 )
-
-
 from diffusers.loaders import AttnProcsLayers
 from diffusers.models.attention_processor import CustomDiffusionAttnProcessor, CustomDiffusionXFormersAttnProcessor
 from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
-
-# NEW
-from cross_attention_control import *
 
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
@@ -617,14 +609,6 @@ def parse_args(input_args=None):
         help="Dont apply augmentation during data augmentation when this flag is enabled.",
     )
 
-    # NEW
-    parser.add_argument(
-        "--cross_attention_prompt",
-        type=str,
-        default=None,
-        help="NEW: Prompt to assist cross attention control",
-    )
-
     if input_args is not None:
         args = parser.parse_args(input_args)
     else:
@@ -648,8 +632,6 @@ def parse_args(input_args=None):
             warnings.warn("You need not use --class_prompt without --with_prior_preservation.")
 
     return args
-
-#########
 
 
 def main(args):
@@ -1093,8 +1075,6 @@ def main(args):
     progress_bar = tqdm(range(global_step, args.max_train_steps), disable=not accelerator.is_local_main_process)
     progress_bar.set_description("Steps")
 
-    ######################## TRAINING LOOP
-
     for epoch in range(first_epoch, args.num_train_epochs):
         unet.train()
         if args.modifier_token is not None:
@@ -1125,97 +1105,36 @@ def main(args):
                 # Get the text embedding for conditioning
                 encoder_hidden_states = text_encoder(batch["input_ids"])[0]
 
-                # NEW
-
-                # Generate images with cross attention control
-                # TODO:
-                # 1) (DONE) define stablediffusion method and all other ones from cross atten in new class
-                # 2) add new args to parse args
-                generated_images = stablediffusion(
-                    prompt=args.cross_attention_prompt,
-                    # still need to add all of these args
-                    prompt_edit=None,
-                    prompt_edit_token_weights=[],
-                    prompt_edit_tokens_start=0.0, 
-                    prompt_edit_tokens_end=1.0, 
-                    prompt_edit_spatial_start=0.0, 
-                    prompt_edit_spatial_end=1.0, 
-                    guidance_scale=7.5, steps=50, 
-                    seed=248396402678, 
-                    width=512, 
-                    height=512, 
-                    init_image=None, 
-                    init_image_strength=0.5
-
-                    # prompt_edit_token_weights=args.cross_attention_token_weights,
-                    # prompt_edit_tokens_start=args.cross_attention_tokens_start,
-                    # prompt_edit_tokens_end=args.cross_attention_tokens_end,
-                    # prompt_edit_spatial_start=args.cross_attention_spatial_start,
-                    # prompt_edit_spatial_end=args.cross_attention_spatial_end,
-                    # guidance_scale=args.cross_attention_guidance_scale,
-                    # steps=args.cross_attention_steps,
-                    # seed=args.seed,
-                    # width=args.image_width,
-                    # height=args.image_height,
-                    # init_image=None,  # Set to None to generate from scratch
-                    # init_image_strength=args.cross_attention_init_image_strength
-                )
-                print("starting cross attention control steps")
-                # Convert generated images to latent space
-                to_tensor = ToTensor()
-                generated_images_tensor = to_tensor(generated_images)
-
-                generated_latents = vae.encode(generated_images_tensor.to(dtype=weight_dtype)).latent_dist.sample()
-                # WARN check to make .config.scaling_factor exists
-                generated_latents = generated_latents * vae.config.scaling_factor
-                print("generated latents")
-
-                # Concatenate the original and generated latents
-                combined_latents = torch.cat((noisy_latents, generated_latents), dim=0)
-                print("combine latents")
-
-                # Concatenate the original and generated timesteps
-                combined_timesteps = torch.cat((timesteps, timesteps), dim=0)
-
-                # Concatenate the original and generated encoder hidden states
-                combined_encoder_hidden_states = torch.cat((encoder_hidden_states, encoder_hidden_states), dim=0)
-
-                model_pred = unet(combined_latents, combined_timesteps, combined_encoder_hidden_states)
                 # Predict the noise residual
-                # OLD: model_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
-                # Split the model predictions for original and generated latents
-                model_pred_original, model_pred_generated = torch.chunk(model_pred, 2, dim=0)
+                model_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
 
                 # Get the target for loss depending on the prediction type
                 if noise_scheduler.config.prediction_type == "epsilon":
-                    target_orginal = noise
-                    target_generated = torch.zeros_like(generated_latents)
+                    target = noise
                 elif noise_scheduler.config.prediction_type == "v_prediction":
-                    target_original = noise_scheduler.get_velocity(latents, noise, timesteps)
-                    target_generated = torch.zeros_like(generated_latents)
+                    target = noise_scheduler.get_velocity(latents, noise, timesteps)
                 else:
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
 
-                # if args.with_prior_preservation:
-                # Chunk the noise and model_pred into two parts and compute the loss on each part separately.
-                model_pred, model_pred_prior = torch.chunk(model_pred, 2, dim=0)
-                target, target_prior = torch.chunk(target, 2, dim=0)
-                mask = torch.chunk(batch["mask"], 2, dim=0)[0]
-                # Compute instance loss
-                loss_original = F.mse_loss(model_pred_original.float(), target_orginal.float(), reduction="none")
-                loss_original = ((loss_original * mask).sum([1, 2, 3]) / mask.sum([1, 2, 3])).mean()
+                if args.with_prior_preservation:
+                    # Chunk the noise and model_pred into two parts and compute the loss on each part separately.
+                    model_pred, model_pred_prior = torch.chunk(model_pred, 2, dim=0)
+                    target, target_prior = torch.chunk(target, 2, dim=0)
+                    mask = torch.chunk(batch["mask"], 2, dim=0)[0]
+                    # Compute instance loss
+                    loss = F.mse_loss(model_pred.float(), target.float(), reduction="none")
+                    loss = ((loss * mask).sum([1, 2, 3]) / mask.sum([1, 2, 3])).mean()
 
-                loss_generated = F.mse_loss(model_pred_generated.float(), target_generated.float(), reduction="none")
-                loss_generated = ((loss_generated * mask).sum([1, 2, 3]) / mask.sum([1, 2, 3])).mean()
+                    # Compute prior loss
+                    prior_loss = F.mse_loss(model_pred_prior.float(), target_prior.float(), reduction="mean")
 
-                # Add the prior loss to the instance loss.
-                loss = loss_original + args.generated_loss_weight * loss_generated
-                print("LOSS: ", loss)
-
+                    # Add the prior loss to the instance loss.
+                    loss = loss + args.prior_loss_weight * prior_loss
+                else:
+                    mask = batch["mask"]
+                    loss = F.mse_loss(model_pred.float(), target.float(), reduction="none")
+                    loss = ((loss * mask).sum([1, 2, 3]) / mask.sum([1, 2, 3])).mean()
                 accelerator.backward(loss)
-
-                # END OF NEW STUFF
-
                 # Zero out the gradients for all token embeddings except the newly added
                 # embeddings for the concept, as we only want to optimize the concept embeddings
                 if args.modifier_token is not None:
