@@ -17,7 +17,7 @@ from io import BytesIO
 from pathlib import Path
 
 import requests
-from clip_retrieval.clip_client import ClipClient
+from clip_retrieval.clip_client import ClipClient, Modality
 from PIL import Image
 from tqdm import tqdm
 
