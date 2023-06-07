@@ -883,6 +883,13 @@ def main(args):
 
     unet.set_attn_processor(unet_lora_attn_procs)
     unet_lora_layers = AttnProcsLayers(unet.attn_processors)
+    
+    accelerator.print(f"starting p2p")
+    
+    proc = P2PCrossAttentionProc(unet.config.head_size, unet.config.upcast_attention, 0.6)
+    unet.set_cross_attention_processor(proc)
+    unet_lora_p2p_layers = AttnProcsLayers(unet.cross_attention_processor)
+    accelerator.print(f"done p2p")
 
     # The text encoder comes from 🤗 transformers, so we cannot directly modify it.
     # So, instead, we monkey-patch the forward calls of its attention-blocks. For this,
