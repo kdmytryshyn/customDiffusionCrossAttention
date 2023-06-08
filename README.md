@@ -1,3 +1,15 @@
+This repository creates edits to the dreambooth and custom_diffusion examples referenced from HuggingFace Diffusers https://github.com/huggingface/diffusers
+
+The following .ipynb files were created and run in Google Colab to run the models:
+
+README_DreamBooth.ipynb
+README_CustomDiffusion.ipynb
+README_CustomDiffusion_P2P.ipynb
+README_DreamBooth_LoRa.ipynb
+
+
+## HuggingFace Diffusers:
+
 <p align="center">
     <br>
     <img src="https://github.com/huggingface/diffusers/blob/main/docs/source/en/imgs/diffusers_library.jpg" width="400"/>
