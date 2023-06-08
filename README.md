@@ -2,10 +2,12 @@ This repository creates edits to the dreambooth and custom_diffusion examples re
 
 The following .ipynb files were created and run in Google Colab to run the models:
 
-- README_DreamBooth.ipynb
-- README_CustomDiffusion.ipynb
-- README_CustomDiffusion_P2P.ipynb
-- README_DreamBooth_LoRa.ipynb
+- Agnes_CustomDiffusion_Baseline (1).ipynb
+- CustomDiffusion_CrossAttention.ipynb
+- DreamBooth FinetunedAgnes.ipynb
+- CustomDiffusion_P2P.ipynb
+- DreamBooth_LoRa.ipynb
+- Model Evaluation.ipynb
 
 
 ## HuggingFace Diffusers:
